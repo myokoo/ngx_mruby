@@ -70,6 +70,19 @@ echo "NUM_THREADS=$NUM_THREADS"
 
 export NGX_MRUBY_CFLAGS="-DMRB_GC_STRESS $NGX_MRUBY_CFLAGS"
 
+# GCC 14+ turns several legacy-C constructs into hard errors by default
+# (implicit-int, int-conversion, incompatible-pointer-types,
+# implicit-function-declaration, return-mismatch). A few of the bundled
+# third-party mrbgems still use such constructs, so demote them back to
+# warnings when building with GCC >= 14.
+CC_FOR_VERSION="${CC:-cc}"
+if "$CC_FOR_VERSION" --version 2>/dev/null | grep -qiE 'gcc|free software foundation'; then
+    GCC_MAJOR=`"$CC_FOR_VERSION" -dumpversion 2>/dev/null | cut -d . -f 1`
+    if [ "${GCC_MAJOR:-0}" -ge 14 ] 2>/dev/null; then
+        export NGX_MRUBY_CFLAGS="$NGX_MRUBY_CFLAGS -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=return-mismatch"
+    fi
+fi
+
 if [ "$ONLY_BUILD_NGX_MRUBY" = "" ]; then
 
   echo "nginx Downloading ..."
