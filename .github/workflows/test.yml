@@ -7,77 +7,64 @@ defaults:
     shell: bash
 
 env:
-  OPENSSL_SRC_VERSION: 1.1.1w
+  OPENSSL_SRC_VERSION: 3.5.6
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    # GitHub-hosted runners do not provide an ubuntu-26.04 image yet, so the
+    # build runs inside an Ubuntu 26.04 container to exercise that environment
+    # (gcc 15 etc.).
+    container:
+      image: ubuntu:26.04
     strategy:
       matrix:
         NGINX_VERSION:
-          - 1.27.2
-          - 1.26.2
+          - 1.29.8
+          - 1.28.3
         BUILD_DYNAMIC_MODULE:
           - ""
           - "TRUE"
         BUILD_WITH_OPENSSL_SRC:
           - ""
           - "TRUE"
+    env:
+      NGINX_VERSION: ${{ matrix.NGINX_VERSION }}
+      BUILD_DYNAMIC_MODULE: ${{ matrix.BUILD_DYNAMIC_MODULE }}
+      BUILD_WITH_OPENSSL_SRC: ${{ matrix.BUILD_WITH_OPENSSL_SRC }}
     steps:
+      - name: install
+        run: |
+          apt-get -qq update
+          apt-get -qq install -y rake bison git gperf zlib1g-dev build-essential valgrind \
+            libpcre2-dev wget curl ca-certificates make perl
+          # The container runs as root and the workspace is bind-mounted, so
+          # tell git the checkout is trusted (used by the mruby build).
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          echo "CC=gcc"  >> $GITHUB_ENV
+          echo "CXX=g++" >> $GITHUB_ENV
+          echo "LD=gcc"  >> $GITHUB_ENV
+          gcc --version | head -1
       - uses: actions/checkout@v4
       - name: Echo matrix
-        env:
-          NGINX_VERSION: ${{ matrix.NGINX_VERSION }}
-          BUILD_DYNAMIC_MODULE: ${{ matrix.BUILD_DYNAMIC_MODULE }}
-          BUILD_WITH_OPENSSL_SRC: ${{ matrix.BUILD_WITH_OPENSSL_SRC }}
         run: |
           echo $NGINX_VERSION
           echo $BUILD_DYNAMIC_MODULE
           echo $BUILD_WITH_OPENSSL_SRC
-      - name: before_install
-        env:
-          NGINX_VERSION: ${{ matrix.NGINX_VERSION }}
-          BUILD_DYNAMIC_MODULE: ${{ matrix.BUILD_DYNAMIC_MODULE }}
-          BUILD_WITH_OPENSSL_SRC: ${{ matrix.BUILD_WITH_OPENSSL_SRC }}
-        run: |
-          sudo apt-get -qq update
-      - name: install
-        env:
-          NGINX_VERSION: ${{ matrix.NGINX_VERSION }}
-          BUILD_DYNAMIC_MODULE: ${{ matrix.BUILD_DYNAMIC_MODULE }}
-          BUILD_WITH_OPENSSL_SRC: ${{ matrix.BUILD_WITH_OPENSSL_SRC }}
-          CXX: g++
-        run: |
-          sudo apt-get -qq install rake bison git gperf zlib1g-dev g++-11 libstdc++-11-dev valgrind
-          sudo apt-get remove -y libssl-dev
-          if [ "$CXX" = "g++" ]; then
-            export CXX="g++-11" CC="gcc-11" LD="gcc-11"
-            echo "CXX=g++-11" >> $GITHUB_ENV
-            echo "CC=gcc-11"  >> $GITHUB_ENV
-            echo "LD=gcc-11"  >> $GITHUB_ENV
-          fi
-          $CXX -v
       - name: before_script
-        env:
-          NGINX_VERSION: ${{ matrix.NGINX_VERSION }}
-          BUILD_DYNAMIC_MODULE: ${{ matrix.BUILD_DYNAMIC_MODULE }}
-          BUILD_WITH_OPENSSL_SRC: ${{ matrix.BUILD_WITH_OPENSSL_SRC }}
         run: |
           curl -sfL https://www.openssl.org/source/openssl-${OPENSSL_SRC_VERSION}.tar.gz -o openssl-${OPENSSL_SRC_VERSION}.tar.gz
           mkdir openssl-${OPENSSL_SRC_VERSION} && tar -xzf openssl-${OPENSSL_SRC_VERSION}.tar.gz -C openssl-${OPENSSL_SRC_VERSION} --strip-components 1
           rm openssl-${OPENSSL_SRC_VERSION}.tar.gz
           cd openssl-${OPENSSL_SRC_VERSION}
-          ./config --prefix=/usr/local --shared zlib -fPIC >> /dev/null 2>&1
-          make >> /dev/null 2>&1
-          sudo make install >> /dev/null 2>&1
-          sudo ldconfig /usr/local/lib
+          ./config --prefix=/usr/local --libdir=lib --shared zlib -fPIC >> /dev/null 2>&1
+          make -j"$(nproc)" >> /dev/null 2>&1
+          make install >> /dev/null 2>&1
+          ldconfig /usr/local/lib
           cd -
           openssl version
       - name: script
         env:
-          NGINX_VERSION: ${{ matrix.NGINX_VERSION }}
-          BUILD_DYNAMIC_MODULE: ${{ matrix.BUILD_DYNAMIC_MODULE }}
-          BUILD_WITH_OPENSSL_SRC: ${{ matrix.BUILD_WITH_OPENSSL_SRC }}
           NUM_THREADS_ENV: 1
           NGINX_RUNNER: valgrind
           NGINX_HEATTIME: 10

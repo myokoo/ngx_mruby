@@ -111,7 +111,11 @@ if test "X$NGX_OPENSSL_SRC" != X ; then
   #   * include/openssl/opensslv.h is generated at build time.
   #   * enable-tlsext is supported.
   #   * Makefile targets are build_all and install_sw.
-  if test -f $NGX_OPENSSL_SRC/VERSION; then
+  if test -f $NGX_OPENSSL_SRC/VERSION.dat; then
+    # OpenSSL 3.x ships VERSION.dat (MAJOR/MINOR/PATCH) and has no
+    # pre-generated include/openssl/opensslv.h before the tree is configured.
+    OPENSSL_VERSION=`(. $NGX_OPENSSL_SRC/VERSION.dat && echo "${MAJOR}.${MINOR}.${PATCH}")`
+  elif test -f $NGX_OPENSSL_SRC/VERSION; then
     # MAJOR=3
     # MINOR=0
     # PATCH=0
@@ -130,9 +134,14 @@ if test "X$NGX_OPENSSL_SRC" != X ; then
   fi
   eval `echo $OPENSSL_VERSION | awk -F '.' '{print "OPENSSL_MAJOR_VERSION=" $1 "\nOPENSSL_MINOR_VERSION=" $2}'`
   $as_echo "openssl version is $OPENSSL_VERSION ($OPENSSL_MAJOR_VERSION $OPENSSL_MINOR_VERSION)" >&2
-  if test $OPENSSL_MAJOR_VERSION -eq 1 -a $OPENSSL_MINOR_VERSION -le 0; then 
+  if test $OPENSSL_MAJOR_VERSION -eq 1 -a $OPENSSL_MINOR_VERSION -le 0; then
     OPENSSL_MAKE_TARGET="build_all install_sw"
     OPENSSL_CONFIG_ENABLE_TLSEXT="enable-tlsext"
+  elif test $OPENSSL_MAJOR_VERSION -ge 3; then
+    # OpenSSL 3.x: build_all_generated also builds non-host (e.g. Windows)
+    # sources and fails; build only the host software instead.
+    OPENSSL_MAKE_TARGET="build_sw install_sw"
+    OPENSSL_CONFIG_ENABLE_TLSEXT=""
   else
     OPENSSL_MAKE_TARGET="build_all_generated install_sw"
     OPENSSL_CONFIG_ENABLE_TLSEXT=""
